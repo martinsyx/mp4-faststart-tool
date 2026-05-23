@@ -1,5 +1,5 @@
-import { FFmpeg } from "https://esm.sh/@ffmpeg/ffmpeg@0.12.10";
-import { fetchFile, toBlobURL } from "https://esm.sh/@ffmpeg/util@0.12.1";
+import { FFmpeg } from "https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js";
+import { fetchFile } from "https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js";
 
 const CORE_BASE = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd";
 

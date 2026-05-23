@@ -7,7 +7,7 @@ const { createServer } = require("node:http");
 const { extname, join, normalize, resolve, sep } = require("node:path");
 
 const host = "127.0.0.1";
-const port = Number(process.env.PORT || 8080);
+const port = Number(process.env.PORT || 8088);
 const rootDir = __dirname;
 
 const mimeTypes = {

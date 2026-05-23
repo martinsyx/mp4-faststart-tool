@@ -1,8 +1,5 @@
 {
   "cleanUrls": true,
-  "rewrites": [
-    { "source": "/", "destination": "/faststart.html" }
-  ],
   "headers": [
     {
       "source": "/(.*)",

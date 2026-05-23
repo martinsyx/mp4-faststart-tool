@@ -1,5 +1,5 @@
-// 直接使用 ffmpeg-core-st (单线程版本)，不使用 @ffmpeg/ffmpeg 包装库
-const CORE_URL = "https://unpkg.com/@ffmpeg/core-st@0.12.6/dist/esm/ffmpeg-core.js";
+// 使用 @ffmpeg/core UMD 版本 (单线程)
+const CORE_URL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js";
 
 const fileInput = document.querySelector("#fileInput");
 const loadButton = document.querySelector("#loadButton");
@@ -44,15 +44,19 @@ async function loadFFmpeg() {
     return;
   }
 
-  setBusy(true, "正在加载 FFmpeg 引擎 (单线程版本)，首次约 30MB...");
+  setBusy(true, "正在加载 FFmpeg 引擎 (单线程版本)，首次约 32MB...");
   progressBar.removeAttribute("value");
 
   try {
-    log("正在加载 ffmpeg-core-st.js ...");
+    log("正在加载 ffmpeg-core.js (UMD) ...");
     
-    // 动态导入 ffmpeg-core
-    const { createFFmpegCore } = await import(CORE_URL);
+    // 加载 UMD 脚本
+    await loadScript(CORE_URL);
     
+    if (typeof createFFmpegCore === "undefined") {
+      throw new Error("createFFmpegCore 未定义，脚本加载失败");
+    }
+
     log("正在初始化 FFmpeg WASM 模块...");
     ffmpegCore = await createFFmpegCore({
       printErr: (msg) => log(`[FFmpeg] ${msg}`),
@@ -71,6 +75,16 @@ async function loadFFmpeg() {
     setBusy(false);
     updateControls();
   }
+}
+
+function loadScript(url) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = url;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error(`Failed to load script: ${url}`));
+    document.head.appendChild(script);
+  });
 }
 
 async function remuxToFastStart() {

@@ -2,7 +2,7 @@ const { copyFile, mkdir, rm } = require("node:fs/promises");
 const { join } = require("node:path");
 
 const outputDir = join(__dirname, "public");
-const files = ["faststart.html", "faststart.js"];
+const files = ["faststart.html", "faststart.js", "vercel.json"];
 
 async function build() {
   await rm(outputDir, { recursive: true, force: true });

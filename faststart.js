@@ -62,14 +62,19 @@ async function loadFFmpeg() {
 
   setBusy(true, "正在加载 FFmpeg 引擎，首次约 30MB...");
   progressBar.removeAttribute("value");
+  log("[1/5] 开始下载 FFmpeg 核心文件...");
 
   try {
-    const [coreURL, wasmURL, classWorkerURL] = await Promise.all([
-      toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.js`, "text/javascript"),
-      toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.wasm`, "application/wasm"),
-      toBlobURL(FFMPEG_WORKER_URL, "text/javascript"),
-    ]);
+    log("[2/5] 正在下载 ffmpeg-core.js ...");
+    const coreURL = await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.js`, "text/javascript").then((u) => { log("  ffmpeg-core.js 下载完成"); return u; });
 
+    log("[3/5] 正在下载 ffmpeg-core.wasm (~30MB) ...");
+    const wasmURL = await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.wasm`, "application/wasm").then((u) => { log("  ffmpeg-core.wasm 下载完成"); return u; });
+
+    log("[4/5] 正在下载 worker.js ...");
+    const classWorkerURL = await toBlobURL(FFMPEG_WORKER_URL, "text/javascript").then((u) => { log("  worker.js 下载完成"); return u; });
+
+    log("[5/5] 正在初始化 FFmpeg Worker ...");
     await ffmpeg.load({ coreURL, wasmURL, classWorkerURL });
 
     ffmpegReady = true;

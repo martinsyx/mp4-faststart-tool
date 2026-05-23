@@ -1,10 +1,7 @@
 import { FFmpeg } from "https://esm.sh/@ffmpeg/ffmpeg@0.12.10";
 import { fetchFile, toBlobURL } from "https://esm.sh/@ffmpeg/util@0.12.1";
 
-const FFMPEG_VERSION = "0.12.10";
-const FFMPEG_CORE_VERSION = "0.12.6";
-const FFMPEG_CORE_BASE = `https://unpkg.com/@ffmpeg/core@${FFMPEG_CORE_VERSION}/dist/umd`;
-const FFMPEG_WORKER_URL = `https://unpkg.com/@ffmpeg/ffmpeg@${FFMPEG_VERSION}/dist/esm/worker.js`;
+const FFMPEG_CORE_BASE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd";
 
 const fileInput = document.querySelector("#fileInput");
 const loadButton = document.querySelector("#loadButton");
@@ -62,26 +59,18 @@ async function loadFFmpeg() {
 
   setBusy(true, "正在加载 FFmpeg 引擎，首次约 30MB...");
   progressBar.removeAttribute("value");
-  log("[1/5] 开始下载 FFmpeg 核心文件...");
+  log("[1/3] 开始下载 FFmpeg 核心文件...");
 
   try {
-    log("[2/5] 正在下载 ffmpeg-core.js ...");
-    const coreURL = await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.js`, "text/javascript").then((u) => { log("  ffmpeg-core.js 下载完成"); return u; });
+    log("[2/3] 正在下载 ffmpeg-core.js + ffmpeg-core.wasm ...");
+    const [coreURL, wasmURL] = await Promise.all([
+      toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.js`, "text/javascript"),
+      toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.wasm`, "application/wasm"),
+    ]);
+    log("  核心文件下载完成");
 
-    log("[3/5] 正在下载 ffmpeg-core.wasm (~30MB) ...");
-    const wasmURL = await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.wasm`, "application/wasm").then((u) => { log("  ffmpeg-core.wasm 下载完成"); return u; });
-
-    log("[4/5] 正在下载 worker.js ...");
-    const classWorkerURL = await toBlobURL(FFMPEG_WORKER_URL, "text/javascript").then((u) => { log("  worker.js 下载完成"); return u; });
-
-    log("[5/5] 正在初始化 FFmpeg Worker ...");
-
-    const loadPromise = ffmpeg.load({ coreURL, wasmURL, classWorkerURL });
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Worker 初始化超时（60秒），可能是 COEP/COOP 头或网络问题")), 60000),
-    );
-
-    await Promise.race([loadPromise, timeoutPromise]);
+    log("[3/3] 正在初始化 FFmpeg ...");
+    await ffmpeg.load({ coreURL, wasmURL });
 
     ffmpegReady = true;
     progressBar.value = 0;

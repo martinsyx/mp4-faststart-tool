@@ -75,7 +75,13 @@ async function loadFFmpeg() {
     const classWorkerURL = await toBlobURL(FFMPEG_WORKER_URL, "text/javascript").then((u) => { log("  worker.js 下载完成"); return u; });
 
     log("[5/5] 正在初始化 FFmpeg Worker ...");
-    await ffmpeg.load({ coreURL, wasmURL, classWorkerURL });
+
+    const loadPromise = ffmpeg.load({ coreURL, wasmURL, classWorkerURL });
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Worker 初始化超时（60秒），可能是 COEP/COOP 头或网络问题")), 60000),
+    );
+
+    await Promise.race([loadPromise, timeoutPromise]);
 
     ffmpegReady = true;
     progressBar.value = 0;

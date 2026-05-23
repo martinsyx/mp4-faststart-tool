@@ -1,7 +1,7 @@
 import { FFmpeg } from "https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js";
 import { fetchFile } from "https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js";
 
-const CORE_BASE = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd";
+const CORE_BASE = "https://unpkg.com/@ffmpeg/core-st@0.12.6/dist/esm";
 
 const fileInput = document.querySelector("#fileInput");
 const loadButton = document.querySelector("#loadButton");
@@ -77,7 +77,7 @@ async function loadFFmpeg() {
     const wasmURL = URL.createObjectURL(wasmBlob);
     log("  ffmpeg-core.wasm 就绪");
 
-    log("正在初始化 FFmpeg ...");
+    log("正在初始化 FFmpeg (单线程模式) ...");
     await ffmpeg.load({ coreURL, wasmURL });
 
     ffmpegReady = true;

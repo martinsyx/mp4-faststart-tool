@@ -1,7 +1,7 @@
 import { FFmpeg } from "https://esm.sh/@ffmpeg/ffmpeg@0.12.10";
 import { fetchFile, toBlobURL } from "https://esm.sh/@ffmpeg/util@0.12.1";
 
-const FFMPEG_CORE_BASE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd";
+const CORE_BASE = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd";
 
 const fileInput = document.querySelector("#fileInput");
 const loadButton = document.querySelector("#loadButton");
@@ -59,17 +59,25 @@ async function loadFFmpeg() {
 
   setBusy(true, "正在加载 FFmpeg 引擎，首次约 30MB...");
   progressBar.removeAttribute("value");
-  log("[1/3] 开始下载 FFmpeg 核心文件...");
 
   try {
-    log("[2/3] 正在下载 ffmpeg-core.js + ffmpeg-core.wasm ...");
-    const [coreURL, wasmURL] = await Promise.all([
-      toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.js`, "text/javascript"),
-      toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.wasm`, "application/wasm"),
-    ]);
-    log("  核心文件下载完成");
+    log("正在下载 ffmpeg-core.js ...");
+    const coreResp = await fetch(`${CORE_BASE}/ffmpeg-core.js`);
+    log(`  ffmpeg-core.js: HTTP ${coreResp.status}`);
+    if (!coreResp.ok) throw new Error(`ffmpeg-core.js 下载失败: HTTP ${coreResp.status}`);
+    const coreBlob = new Blob([await coreResp.arrayBuffer()], { type: "text/javascript" });
+    const coreURL = URL.createObjectURL(coreBlob);
+    log("  ffmpeg-core.js 就绪");
 
-    log("[3/3] 正在初始化 FFmpeg ...");
+    log("正在下载 ffmpeg-core.wasm (~30MB) ...");
+    const wasmResp = await fetch(`${CORE_BASE}/ffmpeg-core.wasm`);
+    log(`  ffmpeg-core.wasm: HTTP ${wasmResp.status}`);
+    if (!wasmResp.ok) throw new Error(`ffmpeg-core.wasm 下载失败: HTTP ${wasmResp.status}`);
+    const wasmBlob = new Blob([await wasmResp.arrayBuffer()], { type: "application/wasm" });
+    const wasmURL = URL.createObjectURL(wasmBlob);
+    log("  ffmpeg-core.wasm 就绪");
+
+    log("正在初始化 FFmpeg ...");
     await ffmpeg.load({ coreURL, wasmURL });
 
     ffmpegReady = true;

@@ -1,5 +1,8 @@
-// 使用 @ffmpeg/core UMD 版本 (单线程)
+import { FFmpeg } from "https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js";
+import { fetchFile } from "https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js";
+
 const CORE_URL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js";
+const WASM_URL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm";
 
 const fileInput = document.querySelector("#fileInput");
 const loadButton = document.querySelector("#loadButton");
@@ -10,9 +13,16 @@ const downloadLink = document.querySelector("#downloadLink");
 const logBox = document.querySelector("#logBox");
 const compatNotice = document.querySelector("#compatNotice");
 
-let ffmpegCore = null;
+const ffmpeg = new FFmpeg();
 let ffmpegReady = false;
 let busy = false;
+
+ffmpeg.on("log", ({ message }) => log(message));
+ffmpeg.on("progress", ({ progress }) => {
+  if (Number.isFinite(progress) && progress >= 0 && progress <= 1) {
+    progressBar.value = Math.min(99, Math.round(progress * 100));
+  }
+});
 
 loadButton.addEventListener("click", loadFFmpeg);
 runButton.addEventListener("click", remuxToFastStart);
@@ -48,19 +58,12 @@ async function loadFFmpeg() {
   progressBar.removeAttribute("value");
 
   try {
-    log("正在加载 ffmpeg-core.js (UMD) ...");
+    log("正在加载 FFmpeg (单线程模式) ...");
     
-    // 加载 UMD 脚本
-    await loadScript(CORE_URL);
-    
-    if (typeof createFFmpegCore === "undefined") {
-      throw new Error("createFFmpegCore 未定义，脚本加载失败");
-    }
-
-    log("正在初始化 FFmpeg WASM 模块...");
-    ffmpegCore = await createFFmpegCore({
-      printErr: (msg) => log(`[FFmpeg] ${msg}`),
-      print: (msg) => log(`[FFmpeg] ${msg}`)
+    // 使用单线程 core，不需要 Worker
+    await ffmpeg.load({
+      coreURL: CORE_URL,
+      wasmURL: WASM_URL
     });
 
     ffmpegReady = true;
@@ -75,16 +78,6 @@ async function loadFFmpeg() {
     setBusy(false);
     updateControls();
   }
-}
-
-function loadScript(url) {
-  return new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = url;
-    script.onload = resolve;
-    script.onerror = () => reject(new Error(`Failed to load script: ${url}`));
-    document.head.appendChild(script);
-  });
 }
 
 async function remuxToFastStart() {
@@ -109,35 +102,15 @@ async function remuxToFastStart() {
   const outputName = "output_faststart.mp4";
 
   try {
-    // 读取文件到内存
-    const fileData = new Uint8Array(await file.arrayBuffer());
-    
-    // 写入 FFmpeg 虚拟文件系统
-    log("写入文件到 FFmpeg 虚拟文件系统...");
-    ffmpegCore.FS.writeFile(inputName, fileData);
+    await ffmpeg.writeFile(inputName, await fetchFile(file));
+    log("文件已写入 FFmpeg 虚拟文件系统");
 
-    // 执行 FFmpeg 命令
     log("执行 FFmpeg 命令: -i input.mp4 -c copy -movflags +faststart output_faststart.mp4");
-    const exitCode = ffmpegCore.callMain([
-      "-i", inputName,
-      "-c", "copy",
-      "-movflags", "+faststart",
-      outputName
-    ]);
+    await ffmpeg.exec(["-i", inputName, "-c", "copy", "-movflags", "+faststart", outputName]);
 
-    if (exitCode !== 0) {
-      throw new Error(`FFmpeg 执行失败，退出码: ${exitCode}`);
-    }
+    const outputData = await ffmpeg.readFile(outputName);
+    log("读取输出文件完成");
 
-    // 读取输出文件
-    log("读取输出文件...");
-    const outputData = ffmpegCore.FS.readFile(outputName);
-
-    // 清理虚拟文件系统
-    ffmpegCore.FS.unlink(inputName);
-    ffmpegCore.FS.unlink(outputName);
-
-    // 创建下载链接
     const blob = new Blob([outputData.buffer], { type: "video/mp4" });
     const url = URL.createObjectURL(blob);
     const outputFileName = file.name.replace(/\.mp4$/i, "_faststart.mp4");

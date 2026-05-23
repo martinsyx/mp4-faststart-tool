@@ -1,7 +1,5 @@
-import { FFmpeg } from "https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js";
-import { fetchFile } from "https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js";
-
-const CORE_BASE = "https://unpkg.com/@ffmpeg/core-st@0.12.6/dist/esm";
+// 直接使用 ffmpeg-core-st (单线程版本)，不使用 @ffmpeg/ffmpeg 包装库
+const CORE_URL = "https://unpkg.com/@ffmpeg/core-st@0.12.6/dist/esm/ffmpeg-core.js";
 
 const fileInput = document.querySelector("#fileInput");
 const loadButton = document.querySelector("#loadButton");
@@ -12,16 +10,9 @@ const downloadLink = document.querySelector("#downloadLink");
 const logBox = document.querySelector("#logBox");
 const compatNotice = document.querySelector("#compatNotice");
 
-const ffmpeg = new FFmpeg();
+let ffmpegCore = null;
 let ffmpegReady = false;
 let busy = false;
-
-ffmpeg.on("log", ({ message }) => log(message));
-ffmpeg.on("progress", ({ progress }) => {
-  if (Number.isFinite(progress) && progress >= 0 && progress <= 1) {
-    progressBar.value = Math.min(99, Math.round(progress * 100));
-  }
-});
 
 loadButton.addEventListener("click", loadFFmpeg);
 runButton.addEventListener("click", remuxToFastStart);
@@ -40,10 +31,6 @@ function checkBrowserCompat() {
     issues.push("浏览器不支持 WebAssembly。");
   }
 
-  if (!("Worker" in window)) {
-    issues.push("浏览器不支持 Web Worker。");
-  }
-
   if (issues.length > 0) {
     compatNotice.hidden = false;
     compatNotice.classList.add("error");
@@ -57,33 +44,25 @@ async function loadFFmpeg() {
     return;
   }
 
-  setBusy(true, "正在加载 FFmpeg 引擎，首次约 30MB...");
+  setBusy(true, "正在加载 FFmpeg 引擎 (单线程版本)，首次约 30MB...");
   progressBar.removeAttribute("value");
 
   try {
-    log("正在下载 ffmpeg-core.js ...");
-    const coreResp = await fetch(`${CORE_BASE}/ffmpeg-core.js`);
-    log(`  ffmpeg-core.js: HTTP ${coreResp.status}`);
-    if (!coreResp.ok) throw new Error(`ffmpeg-core.js 下载失败: HTTP ${coreResp.status}`);
-    const coreBlob = new Blob([await coreResp.arrayBuffer()], { type: "text/javascript" });
-    const coreURL = URL.createObjectURL(coreBlob);
-    log("  ffmpeg-core.js 就绪");
-
-    log("正在下载 ffmpeg-core.wasm (~30MB) ...");
-    const wasmResp = await fetch(`${CORE_BASE}/ffmpeg-core.wasm`);
-    log(`  ffmpeg-core.wasm: HTTP ${wasmResp.status}`);
-    if (!wasmResp.ok) throw new Error(`ffmpeg-core.wasm 下载失败: HTTP ${wasmResp.status}`);
-    const wasmBlob = new Blob([await wasmResp.arrayBuffer()], { type: "application/wasm" });
-    const wasmURL = URL.createObjectURL(wasmBlob);
-    log("  ffmpeg-core.wasm 就绪");
-
-    log("正在初始化 FFmpeg (单线程模式) ...");
-    await ffmpeg.load({ coreURL, wasmURL });
+    log("正在加载 ffmpeg-core-st.js ...");
+    
+    // 动态导入 ffmpeg-core
+    const { createFFmpegCore } = await import(CORE_URL);
+    
+    log("正在初始化 FFmpeg WASM 模块...");
+    ffmpegCore = await createFFmpegCore({
+      printErr: (msg) => log(`[FFmpeg] ${msg}`),
+      print: (msg) => log(`[FFmpeg] ${msg}`)
+    });
 
     ffmpegReady = true;
     progressBar.value = 0;
     statusText.textContent = "FFmpeg 已加载，可以选择 MP4 文件。";
-    log("FFmpeg 引擎加载完成。");
+    log("FFmpeg 引擎加载完成 (单线程模式)。");
   } catch (error) {
     progressBar.value = 0;
     statusText.textContent = `加载失败：${formatError(error)}`;
@@ -116,111 +95,98 @@ async function remuxToFastStart() {
   const outputName = "output_faststart.mp4";
 
   try {
-    await ffmpeg.writeFile(inputName, await fetchFile(file));
+    // 读取文件到内存
+    const fileData = new Uint8Array(await file.arrayBuffer());
+    
+    // 写入 FFmpeg 虚拟文件系统
+    log("写入文件到 FFmpeg 虚拟文件系统...");
+    ffmpegCore.FS.writeFile(inputName, fileData);
 
-    const code = await ffmpeg.exec([
-      "-y",
-      "-hide_banner",
-      "-i",
-      inputName,
-      "-map",
-      "0",
-      "-c",
-      "copy",
-      "-movflags",
-      "+faststart",
-      outputName,
+    // 执行 FFmpeg 命令
+    log("执行 FFmpeg 命令: -i input.mp4 -c copy -movflags +faststart output_faststart.mp4");
+    const exitCode = ffmpegCore.callMain([
+      "-i", inputName,
+      "-c", "copy",
+      "-movflags", "+faststart",
+      outputName
     ]);
 
-    if (code !== 0) {
-      throw new Error(`FFmpeg 退出码：${code}`);
+    if (exitCode !== 0) {
+      throw new Error(`FFmpeg 执行失败，退出码: ${exitCode}`);
     }
 
-    const data = await ffmpeg.readFile(outputName);
-    const blob = new Blob([data.buffer], { type: "video/mp4" });
-    const downloadUrl = URL.createObjectURL(blob);
-    const friendlyName = toFastStartName(file.name);
+    // 读取输出文件
+    log("读取输出文件...");
+    const outputData = ffmpegCore.FS.readFile(outputName);
 
-    downloadLink.href = downloadUrl;
-    downloadLink.download = friendlyName;
+    // 清理虚拟文件系统
+    ffmpegCore.FS.unlink(inputName);
+    ffmpegCore.FS.unlink(outputName);
+
+    // 创建下载链接
+    const blob = new Blob([outputData.buffer], { type: "video/mp4" });
+    const url = URL.createObjectURL(blob);
+    const outputFileName = file.name.replace(/\.mp4$/i, "_faststart.mp4");
+
+    downloadLink.href = url;
+    downloadLink.download = outputFileName;
     downloadLink.hidden = false;
-    downloadLink.textContent = `下载：${friendlyName}（${formatBytes(blob.size)}）`;
+    downloadLink.textContent = `下载 ${outputFileName} (${formatBytes(blob.size)})`;
 
     progressBar.value = 100;
-    statusText.textContent = "处理完成。";
-    log(`处理完成：${friendlyName}，${formatBytes(blob.size)}`);
+    statusText.textContent = `处理完成！文件大小：${formatBytes(blob.size)}`;
+    log(`处理完成：${outputFileName}，${formatBytes(blob.size)}`);
   } catch (error) {
     progressBar.value = 0;
     statusText.textContent = `处理失败：${formatError(error)}`;
     log(`处理失败：${formatError(error)}`);
   } finally {
-    await safeDelete(inputName);
-    await safeDelete(outputName);
     setBusy(false);
     updateControls();
   }
 }
 
-async function safeDelete(name) {
-  try {
-    await ffmpeg.deleteFile(name);
-  } catch {
-    // 文件可能不存在，忽略
-  }
-}
-
-function toFastStartName(fileName) {
-  return fileName.replace(/\.mp4$/i, "") + "_faststart.mp4";
-}
-
-function clearDownload() {
-  if (downloadLink.href) {
-    URL.revokeObjectURL(downloadLink.href);
-  }
-
-  downloadLink.hidden = true;
-  downloadLink.removeAttribute("href");
-  downloadLink.removeAttribute("download");
-  progressBar.value = 0;
-}
-
-function setBusy(isBusy, message) {
+function setBusy(isBusy, message = "") {
   busy = isBusy;
-
   if (message) {
     statusText.textContent = message;
   }
-
   updateControls();
 }
 
 function updateControls() {
+  const hasFile = fileInput.files?.length > 0;
   loadButton.disabled = busy || ffmpegReady;
-  loadButton.textContent = ffmpegReady ? "FFmpeg 已加载" : "加载 FFmpeg 引擎";
-  runButton.disabled = busy || !ffmpegReady || !fileInput.files?.[0];
+  runButton.disabled = busy || !ffmpegReady || !hasFile;
+  fileInput.disabled = busy;
+}
+
+function clearDownload() {
+  if (downloadLink.href && downloadLink.href.startsWith("blob:")) {
+    URL.revokeObjectURL(downloadLink.href);
+  }
+  downloadLink.hidden = true;
+  downloadLink.href = "";
+  downloadLink.download = "";
+  downloadLink.textContent = "";
 }
 
 function log(message) {
-  logBox.textContent += `${new Date().toLocaleTimeString()} ${message}\n`;
+  const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+  const line = `${time} ${message}\n`;
+  logBox.textContent += line;
   logBox.scrollTop = logBox.scrollHeight;
 }
 
-function formatError(error) {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  return String(error);
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function formatBytes(bytes) {
-  if (bytes < 1024 * 1024) {
-    return `${Math.round(bytes / 1024)} KB`;
+function formatError(error) {
+  if (error instanceof Error) {
+    return error.message;
   }
-
-  if (bytes < 1024 * 1024 * 1024) {
-    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  }
-
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+  return String(error);
 }

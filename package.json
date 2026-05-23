@@ -1,0 +1,10 @@
+{
+  "name": "mp4-faststart-tool",
+  "version": "2.0.0",
+  "private": true,
+  "description": "在浏览器内通过 ffmpeg.wasm 把 MP4 重新封装为 FastStart，可部署到 Vercel。",
+  "scripts": {
+    "dev": "node faststart-server.js",
+    "build": "echo \"静态站点无需构建\""
+  }
+}

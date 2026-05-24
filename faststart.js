@@ -57,6 +57,8 @@ async function loadFFmpeg() {
       print: (msg) => log(`[FFmpeg] ${msg}`)
     });
 
+    log(`FFmpeg API: ${Object.keys(ffmpeg).filter((key) => /main|run|call|exec|FS/i.test(key)).join(", ") || "未发现 main/run/call/exec/FS 相关方法"}`);
+
     ffmpegReady = true;
     progressBar.value = 0;
     statusText.textContent = "FFmpeg 已加载，可以选择 MP4 文件。";

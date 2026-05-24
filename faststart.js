@@ -57,7 +57,9 @@ async function loadFFmpeg() {
       print: (msg) => log(`[FFmpeg] ${msg}`)
     });
 
-    log(`FFmpeg API: ${Object.keys(ffmpeg).filter((key) => /main|run|call|exec|FS/i.test(key)).join(", ") || "未发现 main/run/call/exec/FS 相关方法"}`);
+    if (typeof ffmpeg.setLogger === "function") {
+      ffmpeg.setLogger(({ message }) => log(`[FFmpeg] ${message}`));
+    }
 
     ffmpegReady = true;
     progressBar.value = 0;
@@ -105,9 +107,10 @@ async function remuxToFastStart() {
     // 执行 FFmpeg 命令
     log("执行 FFmpeg 命令: -i input.mp4 -c copy -movflags +faststart output_faststart.mp4");
     
-    // 使用 Emscripten 的标准方式调用 main 函数
-    const args = ["ffmpeg", "-i", inputName, "-c", "copy", "-movflags", "+faststart", outputName];
-    ffmpeg.callMain(args);
+    const exitCode = ffmpeg.exec("-i", inputName, "-c", "copy", "-movflags", "+faststart", outputName);
+    if (exitCode !== 0) {
+      throw new Error(`FFmpeg 执行失败，退出码: ${exitCode}`);
+    }
 
     // 读取输出文件
     log("读取输出文件...");
@@ -122,7 +125,7 @@ async function remuxToFastStart() {
     }
 
     // 创建下载链接
-    const blob = new Blob([outputData.buffer], { type: "video/mp4" });
+    const blob = new Blob([outputData], { type: "video/mp4" });
     const url = URL.createObjectURL(blob);
     const outputFileName = file.name.replace(/\.mp4$/i, "_faststart.mp4");
 
